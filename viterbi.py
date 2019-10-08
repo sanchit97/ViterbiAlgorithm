@@ -4,8 +4,8 @@ import math
 #Global variable as these values never change
 pos_tags = {'A':0, 'C':1, 'D':2, 'M':3, 'N':4, 'O':5, 'P':6, 'R':7, 'V':8, 'W':9}
 low_threshold = 2
-alpha = 1e-50
-beta = 1e-50
+alpha = 1
+beta = 1
 
 def load_data(filename):
 	f = open(filename)
@@ -153,6 +153,21 @@ def convert2log(emission_probability_table,transmission_probability_table):
 	return emission_probability_table,transmission_probability_table
 
 
+def backtrack(dynamic_pred_matrix,dynamic_prob_matrix,length):
+	predicted = []
+	predicted.append(dynamic_pred_matrix[10][length+1])
+	for index in range(length,1,-1): #Till 1 because we dont want to take into account best way from first word to start
+		predicted.append(dynamic_pred_matrix[predicted[-1]][index])
+
+	predicted.reverse()
+	predicted_tag = []
+	for i in predicted:
+		for j in pos_tags:
+			if i == pos_tags[j]:
+				predicted_tag.append(j)
+	return predicted_tag
+
+
 def viterbi(emission_probability_table,transmission_probability_table,rows,cols,word_freq_dict,low_freq_words,filename):
 	f = open(filename)
 	data = f.read()
@@ -166,18 +181,21 @@ def viterbi(emission_probability_table,transmission_probability_table,rows,cols,
 		word_tags = line.split(' ')
 		ground_truth_tags = []
 
-		dynamic_prob_matrix = [[0 for j in range(len(word_tags))] for i in range(len(pos_tags))]
+		dynamic_prob_matrix = [[0 for j in range(len(word_tags)+1)] for i in range(len(pos_tags)+1)]
+		dynamic_pred_matrix = [[0 for j in range(len(word_tags)+1)] for i in range(len(pos_tags)+1)]
 		predicted_tag=[]
-		# predicted_tag.append('START')
 
 		word,tag = word_tags[0].split('/')[0],word_tags[0].split('/')[1]
 		word=word.lower()
 		word = check_low_freq(word,low_freq_words,word_freq_dict)
+
+		#For start of sentence
 		for pos_tag in range(0,len(pos_tags)):
 			dynamic_prob_matrix[pos_tag][0]
 			transmission_probability_table[rows['START']][pos_tag]
 			emission_probability_table[word][pos_tag]
 			dynamic_prob_matrix[pos_tag][0] = transmission_probability_table[rows['START']][pos_tag]*emission_probability_table[word][pos_tag] 
+			dynamic_pred_matrix[pos_tag][0] = 'START'
 		
 		for index in range(1,len(word_tags)):
 			word,tag = word_tags[index].split('/')[0],word_tags[index].split('/')[1]
@@ -185,7 +203,6 @@ def viterbi(emission_probability_table,transmission_probability_table,rows,cols,
 			word = word.lower()
 			word = check_low_freq(word,low_freq_words,word_freq_dict)
 			
-			max_final=[]
 			for pos_tag_current in range(0,len(pos_tags)):
 				max_transition_emission=[]
 				for pos_tag_previous in range(0,len(pos_tags)):
@@ -193,27 +210,27 @@ def viterbi(emission_probability_table,transmission_probability_table,rows,cols,
 					max_transition_emission.append((s,pos_tag_previous))
 				max_transition_emission = sorted(max_transition_emission)
 				dynamic_prob_matrix[pos_tag_current][index] = max_transition_emission[0][0]
-				max_final.append((dynamic_prob_matrix[pos_tag_current][index],pos_tag_current))
-			
-		
-			max_final=sorted(max_final)
-			for t,n  in pos_tags.items():
-				if n == max_final[0][1]:
-					predicted_tag.append(t)
-					break
+				dynamic_pred_matrix[pos_tag_current][index] = max_transition_emission[0][1]
 
-		#This is kind of useless, just used to assert the correct path and for completeness
-		final_transitions=[]
+		#For End of sentence
+		index = len(word_tags)
+		pos_tag_current = cols['END']
+		max_transition_emission=[]
 		for pos_tag_previous in range(0,len(pos_tags)):
-			final_transitions.append(dynamic_prob_matrix[pos_tag_previous][len(word_tags)-1]*transmission_probability_table[pos_tag_previous][cols['END']])
+			s = dynamic_prob_matrix[pos_tag_previous][index-1]*transmission_probability_table[pos_tag_previous][pos_tag_current]
+			max_transition_emission.append((s,pos_tag_previous))
+		max_transition_emission = sorted(max_transition_emission,reverse=True)
+		dynamic_prob_matrix[pos_tag_current][index] = max_transition_emission[0][0]
+		dynamic_pred_matrix[pos_tag_current][index] = max_transition_emission[0][1]
 
+		predicted_tag = backtrack(dynamic_pred_matrix,dynamic_prob_matrix,len(ground_truth_tags))
+
+		#accuracy measure
 		for i in range(len(ground_truth_tags)):
 			if ground_truth_tags[i]==predicted_tag[i]:
 				acc+=1
 			tot+=1
 
-		# print(dynamic_prob_matrix)
-		# exit(0)
 	print(acc/tot)
 
 
@@ -224,7 +241,7 @@ def main():
 	transmission_probability_table,rows,cols = calc_transmission_prob("./data/trn.pos")
 	emission_probability_table,transmission_probability_table = convert2log(emission_probability_table,transmission_probability_table)
 
-	viterbi(emission_probability_table,transmission_probability_table,rows,cols,word_freq_dict,low_freq_words,"./data/tst.pos")
+	viterbi(emission_probability_table,transmission_probability_table,rows,cols,word_freq_dict,low_freq_words,"./data/dev.pos")
 
 
 
